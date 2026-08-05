@@ -89,6 +89,7 @@ docker compose up --build
 - A solução exige PHP 8.2 para Laravel 12; se o host usa PHP 8.1, use o Docker para desenvolvimento.
 - MongoDB está configurado em `docker-compose.yml` como serviço `mongo` e pode ser substituído pela variável de ambiente `MONGO_URI`.
 - Quando o MongoDB estiver indisponível, uploads de importação são enfileirados no Redis e processados por um worker assim que o banco voltar.
+- Se a API retornar: "Arquivo enfileirado para processamento assíncrono. Será processado quando o banco estiver disponível.", então o upload foi recebido, mas a persistência direta no Mongo falhou naquele momento.
 - Os arquivos enfileirados são armazenados em `storage/app/queue_uploads` e não devem ser versionados.
 
 ### Uso de filas Redis
@@ -108,7 +109,9 @@ docker run -d --name redis -p 6379:6379 redis:7
 ```bash
 php artisan queue:work --tries=3
 ```
-4. Faça o upload normalmente; se o Mongo estiver indisponível o arquivo será enfileirado e o usuário receberá confirmação de processamento assíncrono.
+5. Faça o upload normalmente; se o Mongo estiver indisponível o arquivo será enfileirado e o usuário receberá confirmação de processamento assíncrono.
+
+> Importante: o worker precisa acessar o mesmo `storage/app/queue_uploads` onde o arquivo foi gravado. Se o processo de fila estiver em um ambiente diferente ou não compartilhar o diretório `storage`, o job não encontrará o arquivo e falhará.
 
 ### Uso de IA
 - Foi utilizado GitHub Copilot gerar a base de testes, definir o parser de linhas fixas e escrever o README.
