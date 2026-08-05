@@ -7,14 +7,50 @@ services:
       - '8000:8000'
     volumes:
       - .:/var/www/html:delegated
+      - queue-data:/var/www/html/storage/app/private/queue_uploads
     environment:
       APP_ENV: local
       APP_DEBUG: 'true'
       APP_URL: http://localhost:8000
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB: luiza_labs
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_QUEUE_RETRY_AFTER: 1300
     depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'php', 'artisan', 'about']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: .
+    depends_on:
+      - app
+      - redis
       - mongo
+    volumes:
+      - .:/var/www/html:delegated
+      - queue-data:/var/www/html/storage/app/private/queue_uploads
+    environment:
+      APP_ENV: local
+      APP_DEBUG: 'true'
+      APP_URL: http://localhost:8000
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: luiza_labs
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_QUEUE_RETRY_AFTER: 1300
+    command: php artisan queue:work redis --sleep=3 --tries=5 --backoff=30 --timeout=1200 --queue=default -v
+    restart: unless-stopped
 
   mongo:
     image: mongo:7.0
@@ -22,6 +58,24 @@ services:
       - '27017:27017'
     volumes:
       - mongo-data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - '6379:6379'
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   mongo-data:
+  queue-data:

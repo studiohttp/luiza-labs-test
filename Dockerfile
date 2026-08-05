@@ -9,10 +9,14 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libfreetype6-dev \
     libjpeg62-turbo-dev \
+    libsqlite3-dev \
     libxml2-dev \
-    && docker-php-ext-install pdo pdo_mysql mbstring xml zip intl
+    && docker-php-ext-install pdo pdo_mysql pdo_sqlite mbstring xml zip intl
 
-RUN pecl install mongodb && docker-php-ext-enable mongodb
+RUN pecl install mongodb redis \
+    && docker-php-ext-enable mongodb redis
+
+COPY docker/php.ini /usr/local/etc/php/conf.d/99-order-import.ini
 
 WORKDIR /var/www/html
 

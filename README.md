@@ -1,120 +1,158 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Desafio LuizaLabs — Vertical Logística
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+API REST em Laravel para receber arquivos legados de pedidos, validar o layout de largura fixa e disponibilizar os dados agrupados por usuário, pedido e produto.
 
-## About Laravel
+## Stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP 8.4 e Laravel 12
+- MongoDB 7 para persistência e consultas
+- Redis 7 e Laravel Queue para processamento assíncrono
+- SQLite como staging temporário em disco
+- Docker e Docker Compose
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Como executar
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
-
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-## Laravel Sponsors
-
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
-
-### Premium Partners
-
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
-
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Desafio Luiza Labs — Vertical Logística
-
-Este repositório entrega uma API Laravel 12 para processar arquivos legados de pedidos em formato de texto fixo, normalizar o payload em JSON e expor os dados via REST.
-
-### Tecnologias usadas
-- Laravel 12
-- PHP 8.4 via Docker
-- MongoDB como persistência primária
-- Enfileiramento assíncrono via Redis quando MongoDB estiver indisponível
-- Logs de monitoramento em pt_BR via `Log::info` / `Log::warning` / `Log::error`
-- Processamento em stream de arquivo para reduzir uso de memória
-
-### O que está implementado
-- `POST /api/orders/import`: recebe arquivo multipart e processa linha a linha
-- `GET /api/orders`: lista pedidos com filtros `order_id`, `date_start`, `date_end`
-- `GET /api/orders/{orderId}`: recupera pedido pelo ID
-- Resiliência para linhas corrompidas: falhas são registradas e a leitura continua
-- Armazenamento primário em MongoDB e fallback em arquivo JSON
-
-### Como rodar com Docker
-1. Copie `.env.example` para `.env`
-2. Ajuste `.env` se desejar
-3. Execute:
+Requisitos: Docker e Docker Compose.
 
 ```bash
-docker compose up --build
+cp .env.example .env
+docker compose up -d --build
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan test
 ```
 
-4. A API estará disponível em `http://localhost:8000`
+A API fica disponível em `http://localhost:8000`.
 
-### Endpoints
-- `POST /api/orders/import` com `multipart/form-data` e campo `file`
-- `GET /api/orders`
-- `GET /api/orders/{orderId}`
+## Importação
 
-### Observações importantes
-- A solução exige PHP 8.2 para Laravel 12; se o host usa PHP 8.1, use o Docker para desenvolvimento.
-- MongoDB está configurado em `docker-compose.yml` como serviço `mongo` e pode ser substituído pela variável de ambiente `MONGO_URI`.
-- Quando o MongoDB estiver indisponível, uploads de importação são enfileirados no Redis e processados por um worker assim que o banco voltar.
-- Se a API retornar: "Arquivo enfileirado para processamento assíncrono. Será processado quando o banco estiver disponível.", então o upload foi recebido, mas a persistência direta no Mongo falhou naquele momento.
-- Os arquivos enfileirados são armazenados em `storage/app/queue_uploads` e não devem ser versionados.
-
-### Uso de filas Redis
-Para processar importações assíncronas quando o Mongo estiver offline:
-
-1. Ajuste `.env`:
-```
-QUEUE_CONNECTION=redis
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
-```
-2. Rode o Redis localmente ou via Docker:
 ```bash
-docker run -d --name redis -p 6379:6379 redis:7
+curl -X POST \
+  -F "file=@docs-desafio/data_1.txt" \
+  http://localhost:8000/api/orders/import
 ```
-3. Inicie o worker de fila:
+
+O endpoint armazena o arquivo com um UUID, envia um job ao Redis e responde com HTTP `202`:
+
+```json
+{
+  "status": "queued",
+  "file_name": "data_1.txt",
+  "message": "Arquivo recebido e enfileirado para processamento."
+}
+```
+
+O worker remove o arquivo temporário somente depois do processamento bem-sucedido. Em falha, o job é repetido com backoff e o arquivo é preservado para diagnóstico.
+
+## Consulta
+
 ```bash
-php artisan queue:work --tries=3
+curl "http://localhost:8000/api/orders"
+curl "http://localhost:8000/api/orders?order_id=753"
+curl "http://localhost:8000/api/orders?date_start=2021-01-01"
+curl "http://localhost:8000/api/orders?date_end=2021-12-31"
+curl "http://localhost:8000/api/orders?date_start=2021-01-01&date_end=2021-12-31"
+curl "http://localhost:8000/api/orders/753"
 ```
-5. Faça o upload normalmente; se o Mongo estiver indisponível o arquivo será enfileirado e o usuário receberá confirmação de processamento assíncrono.
 
-> Importante: o worker precisa acessar o mesmo `storage/app/queue_uploads` onde o arquivo foi gravado. Se o processo de fila estiver em um ambiente diferente ou não compartilhar o diretório `storage`, o job não encontrará o arquivo e falhará.
+Os filtros podem ser combinados. Um intervalo com data final anterior à inicial retorna HTTP `422`.
 
-### Uso de IA
-- Foi utilizado GitHub Copilot gerar a base de testes, definir o parser de linhas fixas e escrever o README.
+## Contrato de resposta
 
-### Licença
-MIT
+`GET /api/orders` retorna diretamente uma lista no contrato do desafio:
+
+```json
+[
+  {
+    "user_id": 70,
+    "name": "Palmer Prosacco",
+    "orders": [
+      {
+        "order_id": 753,
+        "date": "2021-03-08",
+        "total": "1836.74",
+        "products": [
+          {
+            "product_id": 3,
+            "value": "1836.74"
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+Detalhes internos do MongoDB, como `_id`, não são expostos.
+
+## Arquitetura e uso de memória
+
+O request HTTP não processa o conteúdo. Ele salva o upload em volume persistente compartilhado e despacha um job para o worker.
+
+O worker executa duas fases:
+
+1. Lê com `fgets()`, valida cada linha e grava apenas linhas válidas em um staging SQLite temporário.
+2. Percorre o staging ordenado por pedido, mantém somente o pedido atual em memória e persiste lotes no MongoDB.
+
+Assim, a memória é limitada aproximadamente ao maior pedido mais o lote configurado, e não ao tamanho do arquivo. O staging usa disco temporário proporcional ao arquivo recebido.
+
+Configurações relevantes:
+
+```env
+LEGACY_IMPORT_BATCH_SIZE=1000
+LEGACY_IMPORT_STAGING_COMMIT_SIZE=1000
+LEGACY_IMPORT_INVALID_DETAIL_LIMIT=100
+LEGACY_IMPORT_MAX_UPLOAD_KB=2097152
+```
+
+O limite padrão de upload é 2 GiB. O PHP usa `memory_limit=256M`; o processamento não depende de memória ilimitada.
+
+## Validação e resiliência
+
+Cada linha não vazia deve possuir exatamente 95 bytes:
+
+| Campo | Offset | Tamanho |
+|---|---:|---:|
+| ID do usuário | 0 | 10 |
+| Nome | 10 | 45 |
+| ID do pedido | 55 | 10 |
+| ID do produto | 65 | 10 |
+| Valor | 75 | 12 |
+| Data (`Ymd`) | 87 | 8 |
+
+IDs, moeda e data são validados estritamente. Valores monetários são representados em centavos e formatados com duas casas. Linhas inválidas não interrompem o arquivo; todas são contabilizadas, mas apenas uma quantidade configurável de exemplos permanece na resposta do processamento e os eventos são registrados em log.
+
+## Persistência, idempotência e índices
+
+Cada documento MongoDB representa um pedido e contém seus produtos. Após agrupar o arquivo completo no staging, a persistência usa `upsert` por `order_id` e substitui deterministicamente o documento inteiro. Reimportar o mesmo arquivo não duplica produtos nem altera totais.
+
+Trade-off: importar posteriormente um arquivo parcial contendo um pedido já existente substitui aquele pedido pela versão presente no novo arquivo. Essa escolha mantém simplicidade e idempotência sem assumir que `product_id` seja único — os arquivos oficiais demonstram que ele pode se repetir dentro do pedido.
+
+Os índices são criados automaticamente ao iniciar a aplicação:
+
+- `order_id` único;
+- `date`;
+- `user_id`.
+
+## Filas e falhas
+
+O worker possui cinco tentativas, timeout de 20 minutos e backoff progressivo. Se MongoDB estiver temporariamente indisponível, o job falha e é repetido; o arquivo permanece no volume. Se Redis estiver indisponível no recebimento, a API retorna uma mensagem pública genérica com `trace_id`, enquanto os detalhes ficam apenas nos logs.
+
+Não foi criado endpoint de status de importação: ele não faz parte do contrato obrigatório do desafio. Em uma evolução, o UUID da importação poderia ser persistido com estados `pending`, `processing`, `completed` e `failed`.
+
+## Testes e operação
+
+```bash
+docker compose exec app php artisan test
+docker compose exec app php artisan route:list
+docker compose ps
+docker compose logs app
+docker compose logs worker
+docker compose logs mongo
+docker compose logs redis
+```
+
+Os testes cobrem layout, valores monetários, datas impossíveis, linhas corrompidas, agregação, produtos repetidos, lotes, upload assíncrono, validação de arquivos, filtros, contrato JSON e ciclo de vida do arquivo temporário.
+
+## Uso de inteligência artificial
+
+GitHub Copilot e OpenAI Codex foram utilizados como apoio na revisão arquitetural, identificação de casos de borda, criação de testes e documentação. As sugestões foram confrontadas com o PDF e os arquivos oficiais; as decisões foram revisadas, o código foi validado e os testes foram executados pelo autor. Nenhuma saída de IA deve ser considerada substituta da compreensão do código entregue.

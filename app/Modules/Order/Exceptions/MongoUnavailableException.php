@@ -4,6 +4,4 @@ namespace App\Modules\Order\Exceptions;
 
 use RuntimeException;
 
-class MongoUnavailableException extends RuntimeException
-{
-}
+class MongoUnavailableException extends RuntimeException {}

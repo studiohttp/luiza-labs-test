@@ -1,119 +1,85 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Unit;
 
-use App\Modules\Order\Exceptions\MongoUnavailableException;
+use App\Modules\Order\Contracts\OrderRepositoryInterface;
 use App\Modules\Order\Handlers\LegacyOrderParser;
 use App\Modules\Order\Handlers\OrderAggregationHandler;
 use App\Modules\Order\Jobs\ProcessLegacyOrderJob;
-use App\Modules\Order\Contracts\OrderRepositoryInterface;
 use App\Modules\Order\Services\LegacyOrderImporter;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
+use Tests\Support\LegacyLineFactory;
 use Tests\TestCase;
 
-class LegacyOrderImporterTest extends TestCase
+final class LegacyOrderImporterTest extends TestCase
 {
     protected function tearDown(): void
     {
         Mockery::close();
-
         parent::tearDown();
     }
 
-    public function test_import_processes_valid_file_and_returns_saved_orders(): void
-    {
-        $content = "0000000070                              Palmer Prosacco00000007530000000003     1836.7420210308\n";
-        $file = UploadedFile::fake()->createWithContent('orders.txt', $content);
-
-        $repository = Mockery::mock(OrderRepositoryInterface::class);
-        $repository->shouldReceive('saveOrders')
-            ->once()
-            ->withArgs(function (array $orders) {
-                return count($orders) === 1
-                    && $orders[0]['order_id'] === '0000000070'
-                    && $orders[0]['customer_name'] === 'Palmer Prosacco'
-                    && $orders[0]['total_amount'] === 5510.22
-                    && count($orders[0]['items']) === 1;
-            })
-            ->andReturn(1);
-
-        $importer = new LegacyOrderImporter(
-            $repository,
-            new LegacyOrderParser(),
-            new OrderAggregationHandler(),
-        );
-
-        $result = $importer->import($file);
-
-        $this->assertSame('orders.txt', $result['file_name']);
-        $this->assertSame(1, $result['orders_processed']);
-        $this->assertSame(1, $result['items_processed']);
-        $this->assertSame(1, $result['saved_orders']);
-        $this->assertSame(0, $result['invalid_lines']);
-        $this->assertSame([], $result['invalid_details']);
-    }
-
-    public function test_import_enqueues_when_mongo_is_unavailable(): void
+    public function test_upload_is_stored_with_safe_name_and_enqueued(): void
     {
         Storage::fake('local');
         Bus::fake();
+        $importer = $this->importer(Mockery::mock(OrderRepositoryInterface::class));
 
-        $content = "0000000070                              Palmer Prosacco00000007530000000003     1836.7420210308\n";
-        $file = UploadedFile::fake()->createWithContent('orders.txt', $content);
-
-        $repository = Mockery::mock(OrderRepositoryInterface::class);
-        $repository->shouldReceive('saveOrders')
-            ->once()
-            ->andThrow(new MongoUnavailableException('MongoDB indisponível'));
-
-        $importer = new LegacyOrderImporter(
-            $repository,
-            new LegacyOrderParser(),
-            new OrderAggregationHandler(),
+        $result = $importer->import(
+            UploadedFile::fake()->createWithContent('../../orders.txt', LegacyLineFactory::make())
         );
 
-        $result = $importer->import($file);
-
         $this->assertSame('queued', $result['status']);
-        $this->assertSame('orders.txt', $result['file_name']);
-        $this->assertSame(0, $result['invalid_lines']);
-        $this->assertStringContainsString('queue_uploads', $result['queue_path']);
-
-        Bus::assertDispatched(ProcessLegacyOrderJob::class);
+        Bus::assertDispatched(ProcessLegacyOrderJob::class, function (ProcessLegacyOrderJob $job): bool {
+            return str_starts_with($job->path, 'queue_uploads/')
+                && preg_match('/^[a-f0-9-]+\.txt$/', basename($job->path)) === 1;
+        });
     }
 
-    public function test_import_from_path_reads_file_and_saves_orders(): void
+    public function test_it_processes_in_bounded_batches_and_keeps_repeated_product_ids(): void
     {
-        $content = "0000000070                              Palmer Prosacco00000007530000000003     1836.7420210308\n";
-        $path = storage_path('app/test_order_import.txt');
+        config()->set('order_import.batch_size', 1);
+        $content = implode("\n", [
+            LegacyLineFactory::make(orderId: 10, productId: 3, value: '10.00'),
+            LegacyLineFactory::make(orderId: 11, productId: 4, value: '5.00'),
+            LegacyLineFactory::make(orderId: 10, productId: 3, value: '2.50'),
+            'corrupted',
+        ]);
+        $path = tempnam(sys_get_temp_dir(), 'legacy_test_');
         file_put_contents($path, $content);
 
         $repository = Mockery::mock(OrderRepositoryInterface::class);
-        $repository->shouldReceive('saveOrders')
-            ->once()
-            ->withArgs(function (array $orders) {
-                return count($orders) === 1
-                    && $orders[0]['order_id'] === '0000000070';
-            })
-            ->andReturn(1);
+        $repository->shouldReceive('saveOrders')->twice()->withArgs(function (array $orders): bool {
+            if ($orders[0]['order_id'] !== 10) {
+                return $orders[0]['order_id'] === 11;
+            }
 
-        $importer = new LegacyOrderImporter(
+            return count($orders[0]['products']) === 2 && $orders[0]['total'] === '12.50';
+        })->andReturn(1);
+
+        try {
+            $result = $this->importer($repository)->importFromPath($path, 'orders.txt');
+        } finally {
+            unlink($path);
+        }
+
+        $this->assertSame(2, $result['orders_processed']);
+        $this->assertSame(3, $result['items_processed']);
+        $this->assertSame(2, $result['saved_orders']);
+        $this->assertSame(1, $result['invalid_lines']);
+    }
+
+    private function importer(OrderRepositoryInterface $repository): LegacyOrderImporter
+    {
+        return new LegacyOrderImporter(
             $repository,
-            new LegacyOrderParser(),
-            new OrderAggregationHandler(),
+            new LegacyOrderParser,
+            new OrderAggregationHandler,
         );
-
-        $result = $importer->importFromPath($path, 'orders.txt');
-
-        unlink($path);
-
-        $this->assertSame('orders.txt', $result['file_name']);
-        $this->assertSame(1, $result['orders_processed']);
-        $this->assertSame(1, $result['items_processed']);
-        $this->assertSame(1, $result['saved_orders']);
-        $this->assertSame(0, $result['invalid_lines']);
     }
 }

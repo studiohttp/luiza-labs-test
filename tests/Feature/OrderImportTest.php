@@ -1,25 +1,49 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Modules\Order\Jobs\ProcessLegacyOrderJob;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Storage;
+use Tests\Support\LegacyLineFactory;
 use Tests\TestCase;
 
-class OrderImportTest extends TestCase
+final class OrderImportTest extends TestCase
 {
-    public function test_order_import_endpoint_accepts_file(): void
+    public function test_import_accepts_a_text_file_asynchronously(): void
     {
-        $content = "0000000070                              Palmer Prosacco00000007530000000003     1836.7420210308\n";
-        $file = UploadedFile::fake()->createWithContent('orders.txt', $content);
+        Storage::fake('local');
+        Bus::fake();
 
-        $response = $this->postJson('/api/orders/import', [
-            'file' => $file,
+        $response = $this->post('/api/orders/import', [
+            'file' => UploadedFile::fake()->createWithContent('orders.txt', LegacyLineFactory::make()),
         ]);
 
-        $response->assertStatus(200);
-        $response->assertJson([
-            'status' => 'ok',
+        $response->assertAccepted()->assertJson([
+            'status' => 'queued',
+            'file_name' => 'orders.txt',
         ]);
+        Bus::assertDispatched(ProcessLegacyOrderJob::class);
+    }
+
+    public function test_import_rejects_an_empty_file(): void
+    {
+        Storage::fake('local');
+
+        $this->post('/api/orders/import', [
+            'file' => UploadedFile::fake()->createWithContent('orders.txt', ''),
+        ])->assertUnprocessable();
+    }
+
+    public function test_import_rejects_an_unexpected_extension(): void
+    {
+        Storage::fake('local');
+
+        $this->postJson('/api/orders/import', [
+            'file' => UploadedFile::fake()->createWithContent('orders.php', LegacyLineFactory::make()),
+        ])->assertUnprocessable();
     }
 }

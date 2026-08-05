@@ -1,23 +1,28 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Modules\Order\Repositories;
 
 use App\Modules\Order\Adapters\MongoAdapter;
 use App\Modules\Order\Contracts\OrderRepositoryInterface;
+use App\Modules\Order\Exceptions\MongoUnavailableException;
 use Illuminate\Support\Facades\Log;
 use MongoDB\Driver\BulkWrite;
 use MongoDB\Driver\Manager;
 use MongoDB\Driver\Query;
-use App\Modules\Order\Exceptions\MongoUnavailableException;
 
 class OrderRepository implements OrderRepositoryInterface
 {
     protected string $mongoUri;
+
     protected string $mongoDatabase;
+
     protected string $fallbackPath;
+
     protected ?MongoAdapter $adapter;
 
-    public function __construct(MongoAdapter $adapter = null)
+    public function __construct(?MongoAdapter $adapter = null)
     {
         $this->mongoUri = env('MONGO_URI', 'mongodb://127.0.0.1:27017');
         $this->mongoDatabase = env('MONGO_DB', 'luiza_labs');
@@ -44,33 +49,48 @@ class OrderRepository implements OrderRepositoryInterface
 
     public function query(array $filters = []): array
     {
-        
-            if ($this->isMongoAvailable()) {
-                try {
-                    return $this->queryMongo($filters);
-                } catch (\Throwable $e) {
-                    Log::warning('Falha ao consultar MongoDB — usando consulta em arquivo.', ['error' => $e->getMessage()]);
-                    return $this->queryFile($filters);
-                }
-            }
+        if ($this->isMongoAvailable()) {
+            try {
+                return $this->queryMongo($filters);
+            } catch (\Throwable $e) {
+                Log::warning('Falha ao consultar MongoDB — usando consulta em arquivo.', ['error' => $e->getMessage()]);
 
-            return $this->queryFile($filters);
+                return $this->queryFile($filters);
+            }
+        }
+
+        return $this->queryFile($filters);
     }
 
     public function find(string $orderId): ?array
     {
-        
-            if ($this->isMongoAvailable()) {
-                try {
-                    return $this->findMongo($orderId);
-                } catch (\Throwable $e) {
-                    Log::warning('Falha ao buscar pedido no MongoDB — usando fallback em arquivo.', ['order_id' => $orderId, 'error' => $e->getMessage()]);
-                }
+        if ($this->isMongoAvailable()) {
+            try {
+                return $this->findMongo($orderId);
+            } catch (\Throwable $e) {
+                Log::warning('Falha ao buscar pedido no MongoDB — usando fallback em arquivo.', ['order_id' => $orderId, 'error' => $e->getMessage()]);
+            }
+        }
+
+        $orders = $this->loadFileOrders();
+        $expectedOrderId = trim($orderId);
+
+        if (ctype_digit($expectedOrderId)) {
+            $expectedOrderId = (string) (int) $expectedOrderId;
+        }
+
+        foreach ($orders as $order) {
+            $storedOrderId = (string) $order['order_id'];
+            if (ctype_digit($storedOrderId)) {
+                $storedOrderId = (string) (int) $storedOrderId;
             }
 
-            $orders = $this->loadFileOrders();
+            if ($storedOrderId === $expectedOrderId) {
+                return $order;
+            }
+        }
 
-            return $orders[$orderId] ?? null;
+        return null;
     }
 
     protected function isMongoAvailable(): bool
@@ -89,7 +109,7 @@ class OrderRepository implements OrderRepositoryInterface
 
     protected function saveToMongo(array $orders): int
     {
-        $bulk = new BulkWrite();
+        $bulk = new BulkWrite(['ordered' => false]);
 
         foreach ($orders as $order) {
             $bulk->update(
@@ -109,14 +129,20 @@ class OrderRepository implements OrderRepositoryInterface
         $query = new Query($this->buildFilter($filters));
         $cursor = $this->manager()->executeQuery("{$this->mongoDatabase}.orders", $query);
 
-        return array_map(
-            static fn ($item) => json_decode(json_encode($item), true),
-            iterator_to_array($cursor),
-        );
+        return array_values(array_map(static function ($item) {
+            $document = json_decode(json_encode($item), true);
+            unset($document['_id']);
+
+            return $document;
+        }, iterator_to_array($cursor)));
     }
 
     protected function findMongo(string $orderId): ?array
     {
+        if (ctype_digit($orderId)) {
+            $orderId = (int) $orderId;
+        }
+
         $query = new Query(['order_id' => $orderId], ['limit' => 1]);
         $cursor = $this->manager()->executeQuery("{$this->mongoDatabase}.orders", $query);
         $documents = iterator_to_array($cursor);
@@ -125,7 +151,10 @@ class OrderRepository implements OrderRepositoryInterface
             return null;
         }
 
-        return json_decode(json_encode($documents[0]), true);
+        $document = json_decode(json_encode($documents[0]), true);
+        unset($document['_id']);
+
+        return $document;
     }
 
     protected function saveToFile(array $orders): int
@@ -156,13 +185,15 @@ class OrderRepository implements OrderRepositoryInterface
         $filter = $this->buildFilter($filters);
 
         return array_values(array_filter($orders, static function (array $order) use ($filter): bool {
-            if (isset($filter['order_id']) && $order['order_id'] !== $filter['order_id']) {
-                return false;
+            if (isset($filter['order_id'])) {
+                if ((string) $order['order_id'] !== (string) $filter['order_id']) {
+                    return false;
+                }
             }
 
-            if (isset($filter['purchase_date'])) {
-                $date = $order['purchase_date'];
-                $range = $filter['purchase_date'];
+            if (isset($filter['date'])) {
+                $date = $order['date'];
+                $range = $filter['date'];
 
                 if (isset($range['$gte']) && $date < $range['$gte']) {
                     return false;
@@ -198,7 +229,8 @@ class OrderRepository implements OrderRepositoryInterface
         $query = [];
 
         if (! empty($filters['order_id'])) {
-            $query['order_id'] = trim($filters['order_id']);
+            $orderId = trim($filters['order_id']);
+            $query['order_id'] = ctype_digit($orderId) ? (int) $orderId : $orderId;
         }
 
         if (! empty($filters['date_start']) || ! empty($filters['date_end'])) {
@@ -213,7 +245,7 @@ class OrderRepository implements OrderRepositoryInterface
             }
 
             if (! empty($range)) {
-                $query['purchase_date'] = $range;
+                $query['date'] = $range;
             }
         }
 

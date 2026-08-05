@@ -2,26 +2,27 @@
 
 namespace Tests\Unit;
 
-use App\Modules\Order\Repositories\OrderRepository;
 use App\Modules\Order\Exceptions\MongoUnavailableException;
+use App\Modules\Order\Repositories\OrderRepository;
 use Tests\TestCase;
 
 class OrderRepositoryTest extends TestCase
 {
     public function test_save_orders_throws_mongo_unavailable_when_adapter_is_missing(): void
     {
-        $repository = new OrderRepository();
+        $repository = new OrderRepository;
 
         $this->expectException(MongoUnavailableException::class);
         $this->expectExceptionMessage('MongoDB indisponível');
 
         $repository->saveOrders([
             [
-                'order_id' => '0000000070',
-                'customer_name' => 'Palmer Prosacco',
-                'purchase_date' => '2021-03-08',
-                'items' => [],
-                'total_amount' => 1836.74,
+                'order_id' => 70,
+                'user_id' => 70,
+                'name' => 'Palmer Prosacco',
+                'date' => '2021-03-08',
+                'products' => [],
+                'total' => '1836.74',
             ],
         ]);
     }
@@ -33,7 +34,7 @@ class OrderRepositoryTest extends TestCase
             unlink($fallbackPath);
         }
 
-        $repository = new OrderRepository();
+        $repository = new OrderRepository;
 
         $result = $repository->find('0000000070');
 
@@ -47,7 +48,7 @@ class OrderRepositoryTest extends TestCase
             unlink($fallbackPath);
         }
 
-        $repository = new OrderRepository();
+        $repository = new OrderRepository;
 
         $this->assertSame([], $repository->query([]));
     }
@@ -61,30 +62,32 @@ class OrderRepositoryTest extends TestCase
 
         $orders = [
             [
-                'order_id' => '0000000070',
-                'customer_name' => 'Palmer Prosacco',
-                'purchase_date' => '2021-03-08',
-                'items' => [],
-                'total_amount' => 1836.74,
+                'order_id' => 70,
+                'user_id' => 70,
+                'name' => 'Palmer Prosacco',
+                'date' => '2021-03-08',
+                'products' => [],
+                'total' => '1836.74',
             ],
             [
-                'order_id' => '0000000071',
-                'customer_name' => 'Jorge Silva',
-                'purchase_date' => '2021-03-09',
-                'items' => [],
-                'total_amount' => 100.0,
+                'order_id' => 71,
+                'user_id' => 71,
+                'name' => 'Jorge Silva',
+                'date' => '2021-03-09',
+                'products' => [],
+                'total' => '100.00',
             ],
         ];
 
         file_put_contents($fallbackPath, json_encode($orders, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-        $repository = new OrderRepository();
+        $repository = new OrderRepository;
 
         $result = $repository->query(['order_id' => '0000000070']);
 
         unlink($fallbackPath);
 
         $this->assertCount(1, $result);
-        $this->assertSame('0000000070', $result[0]['order_id']);
+        $this->assertSame(70, $result[0]['order_id']);
     }
 }

@@ -1,8 +1,7 @@
-vendor
-node_modules
-storage/*.key
-.env
-.env.*
 .git
-Dockerfile
-docker-compose.yml
+.env
+node_modules
+storage/app/private
+storage/framework
+storage/logs
+vendor

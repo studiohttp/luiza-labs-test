@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Modules\Order\Jobs;
 
 use App\Modules\Order\Services\LegacyOrderImporter;
@@ -14,29 +16,42 @@ class ProcessLegacyOrderJob implements ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
-    protected string $path;
-    protected string $originalName;
+    public int $tries = 5;
 
-    public function __construct(string $path, string $originalName)
+    public int $timeout = 1200;
+
+    public function __construct(
+        public readonly string $path,
+        public readonly string $originalName,
+    ) {}
+
+    public function backoff(): array
     {
-        $this->path = $path;
-        $this->originalName = $originalName;
+        return [30, 60, 120, 300];
     }
 
     public function handle(LegacyOrderImporter $importer): void
     {
-        try {
-            $fullPath = Storage::disk('local')->path($this->path);
+        $fullPath = Storage::disk('local')->path($this->path);
 
-            if (! Storage::disk('local')->exists($this->path)) {
-                throw new \RuntimeException('Arquivo de fila não encontrado: ' . $fullPath);
-            }
-
-            $importer->importFromPath($fullPath, $this->originalName);
-            Log::info('Arquivo processado a partir da fila', ['file' => $this->path, 'path' => $fullPath]);
-        } catch (\Throwable $e) {
-            Log::error('Falha ao processar arquivo da fila', ['file' => $this->path, 'path' => $fullPath ?? null, 'error' => $e->getMessage()]);
-            throw $e;
+        if (! Storage::disk('local')->exists($this->path)) {
+            throw new \RuntimeException('Arquivo pendente não encontrado.');
         }
+
+        $summary = $importer->importFromPath($fullPath, $this->originalName);
+        Storage::disk('local')->delete($this->path);
+
+        Log::info('Arquivo processado a partir da fila', [
+            'file' => $this->path,
+            'summary' => $summary,
+        ]);
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('Falha definitiva ao processar arquivo da fila', [
+            'file' => $this->path,
+            'error' => $exception->getMessage(),
+        ]);
     }
 }

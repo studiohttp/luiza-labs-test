@@ -1,43 +1,61 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Modules\Order\Handlers;
 
+use App\Modules\Order\DTOs\ParsedLegacyLine;
+use App\Modules\Order\ValueObjects\Money;
 use Illuminate\Support\Facades\Log;
 
 class OrderAggregationHandler
 {
-    public function aggregate(array $orders, array $entry): array
+    public function aggregate(array $orders, ParsedLegacyLine $entry): array
     {
-        $orderId = $entry['order_id'];
+        $orderId = $entry->orderId;
+        $date = $entry->date->format('Y-m-d');
+        $product = [
+            'product_id' => $entry->productId,
+            'value' => $entry->value->format(),
+        ];
 
         if (! isset($orders[$orderId])) {
             $orders[$orderId] = [
                 'order_id' => $orderId,
-                'customer_name' => $entry['customer_name'],
-                'purchase_date' => $entry['purchase_date'],
-                'items' => [],
-                'total_amount' => 0.0,
+                'user_id' => $entry->userId,
+                'name' => $entry->name,
+                'date' => $date,
+                'total' => $entry->value->format(),
+                'products' => [$product],
             ];
+
+            return $orders;
         }
 
-        if ($orders[$orderId]['purchase_date'] !== $entry['purchase_date']) {
-            Log::warning('Data diferente encontrada para o mesmo pedido', [
+        $existingOrder = &$orders[$orderId];
+
+        if ($existingOrder['user_id'] !== $entry->userId || $existingOrder['name'] !== $entry->name) {
+            Log::warning('Pedido encontrado com usuário inconsistente', [
                 'order_id' => $orderId,
-                'existing_date' => $orders[$orderId]['purchase_date'],
-                'new_date' => $entry['purchase_date'],
+                'existing_user_id' => $existingOrder['user_id'],
+                'new_user_id' => $entry->userId,
+                'existing_name' => $existingOrder['name'],
+                'new_name' => $entry->name,
             ]);
         }
 
-        $lineTotal = $entry['unit_price'] * $entry['quantity'];
+        if ($existingOrder['date'] !== $date) {
+            Log::warning('Pedido encontrado com datas diferentes', [
+                'order_id' => $orderId,
+                'existing_date' => $existingOrder['date'],
+                'new_date' => $date,
+            ]);
+        }
 
-        $orders[$orderId]['items'][] = [
-            'product_id' => $entry['product_id'],
-            'quantity' => $entry['quantity'],
-            'unit_price' => $entry['unit_price'],
-            'line_total' => $lineTotal,
-        ];
-
-        $orders[$orderId]['total_amount'] += $lineTotal;
+        $existingOrder['products'][] = $product;
+        $existingOrder['total'] = Money::fromFixedWidth($existingOrder['total'])
+            ->add($entry->value)
+            ->format();
 
         return $orders;
     }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Modules\Order\Http\Controllers;
 
 use App\Http\Controllers\Controller;
@@ -8,24 +10,29 @@ use App\Modules\Order\Contracts\OrderRepositoryInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
     public function __construct(
         protected OrderImporterInterface $importer,
         protected OrderRepositoryInterface $repository
-    ) {
-    }
+    ) {}
 
     public function import(Request $request): JsonResponse
     {
         $request->validate([
-            'file' => 'required|file',
+            'file' => [
+                'required',
+                'file',
+                'extensions:txt',
+                'max:'.config('order_import.max_upload_kilobytes'),
+            ],
         ]);
 
         $file = $request->file('file');
 
-        if (! $file || ! $file->isValid()) {
+        if (! $file || ! $file->isValid() || $file->getSize() === 0) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Upload inválido. Verifique o arquivo enviado.',
@@ -40,12 +47,11 @@ class OrderController extends Controller
         try {
             $summary = $this->importer->import($file);
 
-            return response()->json([
-                'status' => 'ok',
-                'summary' => $summary,
-            ]);
+            return response()->json($summary, 202);
         } catch (\Throwable $e) {
+            $traceId = Str::uuid()->toString();
             Log::error('Falha ao importar pedidos', [
+                'trace_id' => $traceId,
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
@@ -53,22 +59,43 @@ class OrderController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Não foi possível processar o arquivo.',
-                'error' => $e->getMessage(),
+                'trace_id' => $traceId,
             ], 500);
         }
     }
 
     public function index(Request $request): JsonResponse
     {
-        $filters = $request->only(['order_id', 'date_start', 'date_end']);
+        $filters = $request->validate([
+            'order_id' => 'nullable|digits_between:1,20',
+            'date_start' => 'nullable|date_format:Y-m-d',
+            'date_end' => 'nullable|date_format:Y-m-d|after_or_equal:date_start',
+        ]);
+
         $orders = $this->repository->query($filters);
 
-        return response()->json([
-            'status' => 'ok',
-            'filters' => $filters,
-            'count' => count($orders),
-            'data' => $orders,
-        ]);
+        $users = [];
+
+        foreach ($orders as $order) {
+            $userKey = (string) $order['user_id'];
+
+            if (! isset($users[$userKey])) {
+                $users[$userKey] = [
+                    'user_id' => $order['user_id'],
+                    'name' => $order['name'],
+                    'orders' => [],
+                ];
+            }
+
+            $users[$userKey]['orders'][] = [
+                'order_id' => $order['order_id'],
+                'date' => $order['date'],
+                'total' => $order['total'],
+                'products' => $order['products'],
+            ];
+        }
+
+        return response()->json(array_values($users));
     }
 
     public function show(string $orderId): JsonResponse
@@ -83,8 +110,16 @@ class OrderController extends Controller
         }
 
         return response()->json([
-            'status' => 'ok',
-            'data' => $order,
+            'user_id' => $order['user_id'],
+            'name' => $order['name'],
+            'orders' => [
+                [
+                    'order_id' => $order['order_id'],
+                    'date' => $order['date'],
+                    'total' => $order['total'],
+                    'products' => $order['products'],
+                ],
+            ],
         ]);
     }
 }

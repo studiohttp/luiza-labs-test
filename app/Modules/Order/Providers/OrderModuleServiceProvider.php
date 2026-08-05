@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Modules\Order\Providers;
 
 use App\Modules\Order\Adapters\MongoAdapter;
@@ -16,7 +18,13 @@ class OrderModuleServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(MongoAdapter::class, function () {
-            return new MongoAdapter(env('MONGO_URI', 'mongodb://127.0.0.1:27017'));
+            $adapter = new MongoAdapter(config('database.mongodb.uri'));
+
+            if ($adapter->isConnected()) {
+                $adapter->ensureIndexes(config('database.mongodb.database'));
+            }
+
+            return $adapter;
         });
 
         $this->app->singleton(OrderRepositoryInterface::class, function ($app) {
@@ -37,7 +45,6 @@ class OrderModuleServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Carrega rotas específicas do módulo Order
-        $this->loadRoutesFrom(__DIR__ . '/../routes.php');
+        $this->loadRoutesFrom(__DIR__.'/../routes.php');
     }
 }

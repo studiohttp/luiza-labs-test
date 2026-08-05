@@ -1,61 +1,66 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Modules\Order\Handlers;
 
+use App\Modules\Order\DTOs\ParsedLegacyLine;
+use App\Modules\Order\ValueObjects\Money;
+use DateTimeImmutable;
 use InvalidArgumentException;
 
 class LegacyOrderParser
 {
-    public function parseLine(string $line): array
+    public function parseLine(string $line): ParsedLegacyLine
     {
-        if (strlen($line) < 95) {
-            throw new InvalidArgumentException('Linha inválida: tamanho menor que o esperado.');
+        $line = rtrim($line, "\r\n");
+
+        if (strlen($line) !== 95) {
+            throw new InvalidArgumentException('Linha inválida: tamanho diferente de 95 caracteres.');
         }
 
-        $orderId = trim(substr($line, 0, 10));
-        $customerName = trim(substr($line, 10, 45));
-        $productId = trim(substr($line, 55, 10));
-        $quantityRaw = substr($line, 65, 10);
-        $amountRaw = trim(substr($line, 80, 7));
-        $dateRaw = trim(substr($line, 87, 8));
+        $userIdRaw = substr($line, 0, 10);
+        $nameRaw = substr($line, 10, 45);
+        $orderIdRaw = substr($line, 55, 10);
+        $productIdRaw = substr($line, 65, 10);
+        $valueRaw = substr($line, 75, 12);
+        $dateRaw = substr($line, 87, 8);
 
-        if ($orderId === '' || ! ctype_digit($orderId)) {
-            throw new InvalidArgumentException('ID do pedido inválido.');
+        $name = trim($nameRaw);
+        if ($name === '') {
+            throw new InvalidArgumentException('Nome do usuário inválido.');
         }
 
-        if ($customerName === '') {
-            throw new InvalidArgumentException('Nome do cliente inválido.');
-        }
+        $userId = $this->parseId($userIdRaw, 'do usuário');
+        $orderId = $this->parseId($orderIdRaw, 'do pedido');
+        $productId = $this->parseId($productIdRaw, 'do produto');
+        $value = Money::fromFixedWidth($valueRaw);
 
-        if ($productId === '' || ! ctype_digit($productId)) {
-            throw new InvalidArgumentException('Código do produto inválido.');
-        }
+        $date = DateTimeImmutable::createFromFormat('!Ymd', $dateRaw);
+        $errors = DateTimeImmutable::getLastErrors();
 
-        if ($quantityRaw === '' || ! ctype_digit(trim($quantityRaw))) {
-            throw new InvalidArgumentException('Quantidade inválida.');
-        }
-
-        $quantity = intval(ltrim($quantityRaw, '0') ?: '0');
-        $amount = str_replace(',', '.', $amountRaw);
-
-        if (! is_numeric($amount)) {
-            throw new InvalidArgumentException('Valor do produto inválido.');
-        }
-
-        $amount = floatval($amount);
-        $purchaseDate = \DateTimeImmutable::createFromFormat('Ymd', $dateRaw);
-
-        if (! $purchaseDate) {
+        if ($date === false || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
             throw new InvalidArgumentException('Data de compra inválida.');
         }
 
-        return [
-            'order_id' => $orderId,
-            'customer_name' => $customerName,
-            'product_id' => $productId,
-            'quantity' => $quantity,
-            'unit_price' => $amount,
-            'purchase_date' => $purchaseDate->format('Y-m-d'),
-        ];
+        return new ParsedLegacyLine(
+            $userId,
+            $name,
+            $orderId,
+            $productId,
+            $value,
+            $date,
+        );
+    }
+
+    private function parseId(string $raw, string $label): int
+    {
+        $value = trim($raw);
+
+        if ($value === '' || ! ctype_digit($value)) {
+            throw new InvalidArgumentException(sprintf('ID %s inválido.', $label));
+        }
+
+        return (int) $value;
     }
 }
