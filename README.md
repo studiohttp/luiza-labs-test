@@ -110,5 +110,8 @@ php artisan queue:work --tries=3
 ```
 4. Faça o upload normalmente; se o Mongo estiver indisponível o arquivo será enfileirado e o usuário receberá confirmação de processamento assíncrono.
 
+### Uso de IA
+- Foi utilizado GitHub Copilot gerar a base de testes, definir o parser de linhas fixas e escrever o README.
+
 ### Licença
 MIT
