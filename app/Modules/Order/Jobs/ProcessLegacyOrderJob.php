@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ProcessLegacyOrderJob implements ShouldQueue
 {
@@ -25,11 +26,16 @@ class ProcessLegacyOrderJob implements ShouldQueue
     public function handle(LegacyOrderImporter $importer): void
     {
         try {
-            $fullPath = storage_path('app/' . $this->path);
+            $fullPath = Storage::disk('local')->path($this->path);
+
+            if (! Storage::disk('local')->exists($this->path)) {
+                throw new \RuntimeException('Arquivo de fila não encontrado: ' . $fullPath);
+            }
+
             $importer->importFromPath($fullPath, $this->originalName);
-            Log::info('Arquivo processado a partir da fila', ['file' => $this->path]);
+            Log::info('Arquivo processado a partir da fila', ['file' => $this->path, 'path' => $fullPath]);
         } catch (\Throwable $e) {
-            Log::error('Falha ao processar arquivo da fila', ['file' => $this->path, 'error' => $e->getMessage()]);
+            Log::error('Falha ao processar arquivo da fila', ['file' => $this->path, 'path' => $fullPath ?? null, 'error' => $e->getMessage()]);
             throw $e;
         }
     }
