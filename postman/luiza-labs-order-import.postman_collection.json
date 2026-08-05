@@ -1,0 +1,123 @@
+{
+  "info": {
+    "name": "Luiza Labs Order Import",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Collection to test legacy order import, order listing and order retrieval."
+  },
+  "item": [
+    {
+      "name": "Import Legacy Orders",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "{{legacy_orders_file}}"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/orders/import",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "import"
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Orders",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders?order_id={{order_id}}&date_start={{date_start}}&date_end={{date_end}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders"
+          ],
+          "query": [
+            {
+              "key": "order_id",
+              "value": "{{order_id}}"
+            },
+            {
+              "key": "date_start",
+              "value": "{{date_start}}"
+            },
+            {
+              "key": "date_end",
+              "value": "{{date_end}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Order by ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{order_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{order_id}}"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "order_id",
+      "value": ""
+    },
+    {
+      "key": "date_start",
+      "value": ""
+    },
+    {
+      "key": "date_end",
+      "value": ""
+    },
+    {
+      "key": "legacy_orders_file",
+      "value": "data_1.txt"
+    }
+  ]
+}
